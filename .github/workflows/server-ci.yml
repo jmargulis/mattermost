@@ -9,6 +9,8 @@ on:
     branches:
       - master
       - release-*
+      - production
+      - staging
   pull_request:
     paths:
       - "server/**"

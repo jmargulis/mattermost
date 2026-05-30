@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+      - production
+      - staging
   pull_request:
 
 permissions:
