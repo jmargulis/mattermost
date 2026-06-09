@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/mattermost/mattermost/server/public/model"
@@ -72,11 +73,8 @@ func userFromOIDCUser(logger mlog.LoggerIFace, u *OIDCUser) *model.User {
 	user.AuthData = &sub
 	user.AuthService = model.UserAuthServiceOIDC
 
-	for _, g := range u.Groups {
-		if g == "system_admin" {
-			user.Roles = model.SystemAdminRoleId + " " + model.SystemUserRoleId
-			break
-		}
+	if slices.Contains(u.Groups, "system_admin") {
+		user.Roles = model.SystemAdminRoleId + " " + model.SystemUserRoleId
 	}
 
 	return user
@@ -101,7 +99,7 @@ func (u *OIDCUser) IsValid() error {
 	return nil
 }
 
-func (gp *OIDCProvider) GetUserFromJSON(c request.CTX, data io.Reader, tokenUser *model.User, _ *model.SSOSettings) (*model.User, error) {
+func (gp *OIDCProvider) GetUserFromJSON(rctx request.CTX, data io.Reader, tokenUser *model.User, _ *model.SSOSettings) (*model.User, error) {
 	u, err := oidcUserFromJSON(data)
 	if err != nil {
 		return nil, err
@@ -109,7 +107,7 @@ func (gp *OIDCProvider) GetUserFromJSON(c request.CTX, data io.Reader, tokenUser
 	if err = u.IsValid(); err != nil {
 		return nil, err
 	}
-	return userFromOIDCUser(c.Logger(), u), nil
+	return userFromOIDCUser(rctx.Logger(), u), nil
 }
 
 func (gp *OIDCProvider) GetSSOSettings(_ request.CTX, config *model.Config, _ string) (*model.SSOSettings, error) {
