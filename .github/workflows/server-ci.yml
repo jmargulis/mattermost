@@ -338,6 +338,7 @@ jobs:
       fips-enabled: true
   build-mattermost-server:
     name: Build mattermost server app
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     needs: go
     runs-on: ubuntu-22.04
     container: mattermost/mattermost-build-server:${{ needs.go.outputs.version }}
