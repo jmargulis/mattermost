@@ -363,6 +363,12 @@ func GenerateLimitedClientConfig(c *model.Config, telemetryID string, license *m
 	props["EnableSignUpWithOpenId"] = "false"
 	props["OpenIdButtonText"] = ""
 	props["OpenIdButtonColor"] = ""
+	// jmargulis: OIDCSettings are exposed through the OpenId slot without requiring a license.
+	if *c.OIDCSettings.Enable {
+		props["EnableSignUpWithOpenId"] = "true"
+		props["OpenIdButtonText"] = *c.OIDCSettings.ButtonText
+		props["OpenIdButtonColor"] = *c.OIDCSettings.ButtonColor
+	}
 	props["CWSURL"] = ""
 	props["EnableCustomBrand"] = strconv.FormatBool(*c.TeamSettings.EnableCustomBrand)
 	props["CustomBrandText"] = *c.TeamSettings.CustomBrandText

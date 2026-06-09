@@ -50,7 +50,8 @@ const (
 	PasswordFIPSMinimumLength = 14
 
 	ServiceGitlab = "gitlab"
-
+	// jmargulis: Add OIDC as a first-class service type for app layer OAuth.
+	ServiceOIDC      = "oidc"
 	ServiceGoogle    = "google"
 	ServiceOffice365 = "office365"
 	ServiceOpenid    = "openid"
@@ -280,6 +281,8 @@ const (
 	CloudSettingsDefaultCwsAPIURLTest = "https://api.internal.test.cloud.mattermost.com"
 
 	OpenidSettingsDefaultScope = "profile openid email"
+	// jmargulis: OIDC default scope includes "profile"
+	OIDCSettingsDefaultScope = "profile OIDC email"
 
 	LocalModeSocketPath = "/var/tmp/mattermost_local.socket"
 
@@ -1297,6 +1300,8 @@ type SSOSettings struct {
 	ButtonText           *string `access:"authentication_openid"` // telemetry: none
 	ButtonColor          *string `access:"authentication_openid"` // telemetry: none
 	UsePreferredUsername *bool   `access:"authentication_openid"` // telemetry: none
+	// jmargulis: Include DefaultTeamName
+	DefaultTeamName *string `access:"authentication_openid"` // telemetry: none
 }
 
 func (s *SSOSettings) setDefaults(scope, authEndpoint, tokenEndpoint, userAPIEndpoint, buttonColor string) {
@@ -1343,6 +1348,11 @@ func (s *SSOSettings) setDefaults(scope, authEndpoint, tokenEndpoint, userAPIEnd
 	// Note: Preferred username is not supported for Google.
 	if s.UsePreferredUsername == nil {
 		s.UsePreferredUsername = NewPointer(false)
+	}
+
+	// jmargulis: Set DefaultTeamName
+	if s.DefaultTeamName == nil {
+		s.DefaultTeamName = NewPointer("")
 	}
 }
 
@@ -3971,20 +3981,22 @@ const ConfigAccessTagAnySysConsoleRead = "*_read"
 //	    Product bool `access:write_restrictable`
 //	}
 type Config struct {
-	ServiceSettings             ServiceSettings
-	TeamSettings                TeamSettings
-	ClientRequirements          ClientRequirements
-	SqlSettings                 SqlSettings
-	LogSettings                 LogSettings
-	ExperimentalAuditSettings   ExperimentalAuditSettings
-	PasswordSettings            PasswordSettings
-	FileSettings                FileSettings
-	EmailSettings               EmailSettings
-	RateLimitSettings           RateLimitSettings
-	PrivacySettings             PrivacySettings
-	SupportSettings             SupportSettings
-	AnnouncementSettings        AnnouncementSettings
-	ThemeSettings               ThemeSettings
+	ServiceSettings           ServiceSettings
+	TeamSettings              TeamSettings
+	ClientRequirements        ClientRequirements
+	SqlSettings               SqlSettings
+	LogSettings               LogSettings
+	ExperimentalAuditSettings ExperimentalAuditSettings
+	PasswordSettings          PasswordSettings
+	FileSettings              FileSettings
+	EmailSettings             EmailSettings
+	RateLimitSettings         RateLimitSettings
+	PrivacySettings           PrivacySettings
+	SupportSettings           SupportSettings
+	AnnouncementSettings      AnnouncementSettings
+	ThemeSettings             ThemeSettings
+	// jmargulis: Include OIDCSettings
+	OIDCSettings                SSOSettings
 	GitLabSettings              SSOSettings
 	GoogleSettings              SSOSettings
 	Office365Settings           Office365Settings
@@ -4051,6 +4063,9 @@ func (o *Config) ToJSONFiltered(tagType, tagValue string) ([]byte, error) {
 
 func (o *Config) GetSSOService(service string) *SSOSettings {
 	switch service {
+	// jmargulis: Handle OIDC service
+	case ServiceOIDC:
+		return &o.OIDCSettings
 	case ServiceGitlab:
 		return &o.GitLabSettings
 	case ServiceGoogle:
@@ -4095,6 +4110,8 @@ func (o *Config) SetDefaults() {
 	o.PrivacySettings.setDefaults()
 	o.Office365Settings.setDefaults()
 	o.Office365Settings.setDefaults()
+	// jmargulis: Set defaults for OIDCSettings
+	o.OIDCSettings.setDefaults(OIDCSettingsDefaultScope, "", "", "", "#145DBF")
 	o.GitLabSettings.setDefaults("", "", "", "", "")
 	o.GoogleSettings.setDefaults(GoogleSettingsDefaultScope, GoogleSettingsDefaultAuthEndpoint, GoogleSettingsDefaultTokenEndpoint, GoogleSettingsDefaultUserAPIEndpoint, "")
 	o.OpenIdSettings.setDefaults(OpenidSettingsDefaultScope, "", "", "", "#145DBF")
@@ -5063,6 +5080,11 @@ func (o *Config) Sanitize(pluginManifests []*Manifest, opts *SanitizeOptions) {
 
 	if o.EmailSettings.SMTPPassword != nil && *o.EmailSettings.SMTPPassword != "" {
 		*o.EmailSettings.SMTPPassword = FakeSetting
+	}
+
+	// jmargulis: Set OIDC secret field
+	if o.OIDCSettings.Secret != nil && *o.OIDCSettings.Secret != "" {
+		*o.OIDCSettings.Secret = FakeSetting
 	}
 
 	if o.GitLabSettings.Secret != nil && *o.GitLabSettings.Secret != "" {

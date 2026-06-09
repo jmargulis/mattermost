@@ -733,11 +733,27 @@ func (a *App) CompleteOAuth(rctx request.CTX, service string, body io.ReadCloser
 
 func (a *App) getSSOProvider(service string) (einterfaces.OAuthProvider, *model.AppError) {
 	sso := a.Config().GetSSOService(service)
+	// jmargulis: OIDCSettings always takes precedence over OpenIdSettings when the webapp's "openid"
+	// button is used. Check OIDC first so an admin who enables both gets deterministic behavior.
+	if service == model.ServiceOpenid {
+		if oidcSso := a.Config().GetSSOService(model.ServiceOIDC); oidcSso != nil && *oidcSso.Enable {
+			if sso != nil && *sso.Enable {
+				mlog.Warn("Both OIDCSettings and OpenIdSettings are enabled; OIDCSettings takes precedence")
+			}
+			provider := einterfaces.GetOAuthProvider(model.ServiceOIDC)
+			if provider == nil {
+				return nil, model.NewAppError("getSSOProvider", "api.user.login_by_oauth.not_available.app_error",
+					map[string]any{"Service": "OIDC"}, "", http.StatusNotImplemented)
+			}
+			return provider, nil
+		}
+	}
 	if sso == nil || !*sso.Enable {
 		return nil, model.NewAppError("getSSOProvider", "api.user.authorize_oauth_user.unsupported.app_error", nil, "service="+service, http.StatusNotImplemented)
 	}
 	providerType := service
-	if strings.Contains(*sso.Scope, OpenIDScope) {
+	// jmargulis: Include ServiceOIDC in theck
+	if service != model.ServiceOIDC && strings.Contains(*sso.Scope, OpenIDScope) {
 		providerType = model.ServiceOpenid
 	}
 	provider := einterfaces.GetOAuthProvider(providerType)
@@ -754,6 +770,9 @@ func (a *App) LoginByOAuth(rctx request.CTX, service string, userData io.Reader,
 	if e != nil {
 		return nil, e
 	}
+
+	// jmargulis: Get SSO settings
+	ssoSettings, _ := provider.GetSSOSettings(rctx, a.Config(), service)
 
 	buf := bytes.Buffer{}
 	if _, err := buf.ReadFrom(userData); err != nil {
@@ -804,6 +823,30 @@ func (a *App) LoginByOAuth(rctx request.CTX, service string, userData io.Reader,
 
 	if appErr != nil {
 		return nil, appErr
+	}
+
+	// jmargulis: Sync roles from OIDC groups claim (e.g. "system_admin" group → system admin role).
+	// authUser.Roles is set by the provider's GetUserFromJSON; CreateUser always resets
+	// roles to system_user, so we re-apply here after the fact on every login.
+	if authUser.Roles != "" && authUser.Roles != user.Roles {
+		if updatedUser, roleErr := a.UpdateUserRoles(rctx, user.Id, authUser.Roles, false); roleErr != nil {
+			rctx.Logger().Warn("failed to sync OAuth user roles", mlog.Err(roleErr))
+		} else {
+			user = updatedUser
+		}
+	}
+
+	// jmargulis: Auto-join the provider's configured default team on every login.
+	// Awaiting conflict resolution regarding teamID
+	// if ssoSettings != nil && ssoSettings.DefaultTeamName != nil && *ssoSettings.DefaultTeamName != "" && teamID == "" {
+	if ssoSettings != nil && ssoSettings.DefaultTeamName != nil && *ssoSettings.DefaultTeamName != "" {
+		if team, teamErr := a.GetTeamByName(*ssoSettings.DefaultTeamName); teamErr == nil {
+			if joinErr := a.AddUserToTeamByTeamId(rctx, team.Id, user); joinErr != nil {
+				rctx.Logger().Warn("failed to add OAuth user to default team", mlog.String("team", *ssoSettings.DefaultTeamName), mlog.Err(joinErr))
+			}
+		} else {
+			rctx.Logger().Warn("OAuth default team not found", mlog.String("team", *ssoSettings.DefaultTeamName))
+		}
 	}
 
 	return user, nil
