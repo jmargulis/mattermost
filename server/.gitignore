@@ -6,6 +6,8 @@ node_modules
 /dist
 /webapp/dist
 jobserver
+# jmargulis: This is for OIDC testing. It should not be committed.
+oidctest
 npm-debug.log
 webapp/yarn-error.log
 mattermost.mattermost-license
